@@ -6,6 +6,8 @@ import com.example.data.model.GuardianSessionEntity
 import com.example.data.model.IncidentEntity
 import com.example.data.model.SafeZoneEntity
 import com.example.data.model.UserProfileEntity
+import com.example.data.validation.MongoSchemaValidator
+import com.example.data.validation.ValidationResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -306,6 +308,16 @@ class MongoDbAtlasService {
     }
 
     fun insertCustomDocument(collectionName: String, summary: String, customJson: String): Boolean {
+        if (customJson.isNotBlank()) {
+            val validation = MongoSchemaValidator.validateRawJson(collectionName, customJson)
+            if (validation is ValidationResult.Invalid) {
+                _syncStatus.value = _syncStatus.value.copy(
+                    statusMessage = "Schema Validation Failed for '$collectionName': ${validation.summary()}"
+                )
+                return false
+            }
+        }
+
         val list = collectionDocsCache.getOrPut(collectionName) { mutableListOf() }
         val randomHex = java.lang.Long.toHexString(System.currentTimeMillis()) + (1000..9999).random()
         val newDoc = MongoDocumentModel(
@@ -429,28 +441,20 @@ class MongoDbAtlasService {
 
     // Sync an SOS Incident immediately to MongoDB Atlas
     suspend fun syncIncident(incident: IncidentEntity): Boolean = withContext(Dispatchers.IO) {
-        val isSim = _config.value.apiKey.isBlank() || _config.value.apiKey == "MY_MONGODB_ATLAS_API_KEY"
-
-        val incidentBson = JSONObject().apply {
-            put("incident_id", incident.id)
-            put("type", incident.type)
-            put("timestamp", incident.timestamp)
-            put("status", incident.status)
-            put("location_name", incident.locationName ?: "")
-            if (incident.latitude != null && incident.longitude != null) {
-                put("location", JSONObject().apply {
-                    put("type", "Point")
-                    put("coordinates", JSONArray().apply {
-                        put(incident.longitude)
-                        put(incident.latitude)
-                    })
-                })
-            }
-            put("contacts_notified", incident.contactsNotifiedCount)
-            put("ai_summary", incident.aiSummary ?: "")
-            put("notes", incident.notes)
-            put("synced_at", System.currentTimeMillis())
+        val validation = MongoSchemaValidator.validateIncident(incident)
+        if (validation is ValidationResult.Invalid) {
+            _syncStatus.value = _syncStatus.value.copy(
+                statusMessage = "Schema Validation Rejected: ${validation.summary()}"
+            )
+            return@withContext false
         }
+
+        val incidentBson = MongoSchemaValidator.toValidatedIncidentBson(incident).getOrElse {
+            _syncStatus.value = _syncStatus.value.copy(statusMessage = "Serialization failed: ${it.message}")
+            return@withContext false
+        }
+
+        val isSim = _config.value.apiKey.isBlank() || _config.value.apiKey == "MY_MONGODB_ATLAS_API_KEY"
 
         if (isSim) {
             delay(400)
@@ -460,7 +464,7 @@ class MongoDbAtlasService {
                 lastSyncTimestamp = System.currentTimeMillis(),
                 collectionStats = currentStats,
                 totalDocumentsSynced = _syncStatus.value.totalDocumentsSynced + 1,
-                statusMessage = "Incident #${incident.id} synced to MongoDB 'incidents' collection"
+                statusMessage = "Incident #${incident.id} validated & synced to MongoDB 'incidents'"
             )
             return@withContext true
         }
@@ -498,8 +502,45 @@ class MongoDbAtlasService {
     ): MongoDbSyncResult = withContext(Dispatchers.IO) {
         _syncStatus.value = _syncStatus.value.copy(
             isSyncing = true,
-            statusMessage = "Syncing local Room entities to MongoDB collections..."
+            statusMessage = "Validating record schemas before MongoDB transmission..."
         )
+
+        // Strict schema validation checks across all records
+        val validationErrors = mutableListOf<String>()
+
+        contacts.forEach { c ->
+            val v = MongoSchemaValidator.validateContact(c)
+            if (v is ValidationResult.Invalid) {
+                validationErrors.add("Contact '${c.name}': ${v.summary()}")
+            }
+        }
+
+        incidents.forEach { inc ->
+            val v = MongoSchemaValidator.validateIncident(inc)
+            if (v is ValidationResult.Invalid) {
+                validationErrors.add("Incident #${inc.id}: ${v.summary()}")
+            }
+        }
+
+        if (userProfile != null) {
+            val v = MongoSchemaValidator.validateUserProfile(userProfile)
+            if (v is ValidationResult.Invalid) {
+                validationErrors.add("UserProfile '${userProfile.displayName}': ${v.summary()}")
+            }
+        }
+
+        if (validationErrors.isNotEmpty()) {
+            _syncStatus.value = _syncStatus.value.copy(
+                isSyncing = false,
+                statusMessage = "Schema Validation Failed: ${validationErrors.size} records rejected"
+            )
+            return@withContext MongoDbSyncResult(
+                success = false,
+                documentsSynced = 0,
+                message = "Transmission blocked. ${validationErrors.size} records violated schema:\n" +
+                        validationErrors.take(3).joinToString("\n")
+            )
+        }
 
         delay(1200) // Realistic cloud synchronization cycle
 

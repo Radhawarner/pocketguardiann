@@ -39,6 +39,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
+import com.example.data.validation.MongoSchemaValidator
+import com.example.data.validation.ValidationResult
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -268,6 +272,34 @@ fun MongoDbSyncScreen(
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFDCFCE7)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.VerifiedUser,
+                                            contentDescription = null,
+                                            tint = Color(0xFF15803D),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "STRICT SCHEMA VALIDATION ACTIVE",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF15803D)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
                                 text = "Database: ${config.databaseName}",
@@ -729,26 +761,70 @@ fun MongoDbSyncScreen(
         var docSummary by remember { mutableStateOf("Test $selectedCollection entry") }
         var docJson by remember {
             mutableStateOf(
-                """
+                when (selectedCollection) {
+                    "incidents" -> """
 {
-  "type": "SIMULATED_TEST",
-  "source": "PocketGuardian_App",
-  "status": "VERIFIED",
-  "priority": "HIGH",
-  "notes": "Inserted via MongoDB Document Console"
+  "type": "SOS",
+  "status": "ALERT_SENT",
+  "location_name": "Mission & 5th, San Francisco, CA",
+  "location": {
+    "type": "Point",
+    "coordinates": [-122.4089, 37.7825]
+  },
+  "contacts_notified": 3,
+  "notes": "Verified incident payload"
 }
-                """.trimIndent()
+                    """.trimIndent()
+                    "contacts" -> """
+{
+  "name": "David Morgan",
+  "phone": "+1 (555) 789-0123",
+  "relationship": "Father",
+  "priority": 1,
+  "notify_enabled": true
+}
+                    """.trimIndent()
+                    "user_profile" -> """
+{
+  "display_name": "Alex Morgan",
+  "phone": "+1 (555) 234-5678",
+  "blood_type": "O+",
+  "emergency_number": "911",
+  "allergies": "None"
+}
+                    """.trimIndent()
+                    else -> """
+{
+  "name": "New Safety Zone",
+  "category": "SAFE_HAVEN",
+  "address": "100 Market St"
+}
+                    """.trimIndent()
+                }
             )
+        }
+
+        val validationResult = remember(selectedCollection, docJson) {
+            MongoSchemaValidator.validateRawJson(selectedCollection, docJson)
         }
 
         AlertDialog(
             onDismissRequest = { showInsertDialog = false },
             title = {
-                Text(
-                    text = "Insert Document to '$selectedCollection'",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.VerifiedUser,
+                        contentDescription = null,
+                        tint = MongoDbForest,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Insert to '$selectedCollection'",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
             },
             text = {
                 Column {
@@ -768,15 +844,48 @@ fun MongoDbSyncScreen(
                             .fillMaxWidth()
                             .height(140.dp)
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Live Schema Validation Indicator
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (validationResult.isValid) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (validationResult.isValid) Icons.Default.Check else Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = if (validationResult.isValid) Color(0xFF15803D) else Color(0xFFB91C1C),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (validationResult.isValid) {
+                                    "Schema Valid: Ready for MongoDB Atlas"
+                                } else {
+                                    (validationResult as ValidationResult.Invalid).summary()
+                                },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (validationResult.isValid) Color(0xFF15803D) else Color(0xFFB91C1C)
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         onInsertTestDocument(selectedCollection, docSummary, docJson)
-                        Toast.makeText(context, "Document inserted into '$selectedCollection'", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Validated document inserted into '$selectedCollection'", Toast.LENGTH_SHORT).show()
                         showInsertDialog = false
                     },
+                    enabled = validationResult.isValid,
                     colors = ButtonDefaults.buttonColors(containerColor = MongoDbForest)
                 ) {
                     Text("Insert BSON")
