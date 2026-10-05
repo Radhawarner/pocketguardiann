@@ -1,0 +1,7 @@
+{
+  "name": "Pocket Guardian",
+  "description": "AI-assisted personal safety and emergency alert platform for rapid SOS, trusted contacts, safety journeys, and guidance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

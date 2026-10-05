@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Shield Glow / Border -->
+    <path
+        android:fillColor="#E11D48"
+        android:pathData="M54,26 C68,26 80,31 80,45 C80,64 64,78 54,82 C44,78 28,64 28,45 C28,31 40,26 54,26 Z" />
+
+    <!-- Inner Shield Body -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M54,29 C65,29 76,33 76,45 C76,62 62,74 54,78 C46,74 32,62 32,45 C32,33 43,29 54,29 Z" />
+
+    <!-- Emergency Cross / Star of Protection -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51,37 H57 V49 H69 V55 H57 V67 H51 V55 H39 V49 H51 Z" />
+
+    <!-- Center Pulse Core -->
+    <path
+        android:fillColor="#E11D48"
+        android:pathData="M54,54m-4,0a4,4 0 1,1 8,0a4,4 0 1,1 -8,0" />
+</vector>
